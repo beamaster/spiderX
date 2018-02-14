@@ -1,5 +1,14 @@
 package com.etoak.crawl.util;
 
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.ClientProtocolException;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.util.EntityUtils;
+import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -7,12 +16,22 @@ import org.jsoup.select.Elements;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLConnection;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 /**
  * 〈一句话功能简述〉<br>
  *
@@ -24,8 +43,184 @@ public class ParserHtml {
 
     private static Logger logger = LoggerFactory.getLogger(ParserHtml.class);
 
+
     /**
-     * 获取真实的下载地址
+     * 获取页面内容方法1
+     * @param url
+     * @return
+     */
+    public static String getHtmlContent1(String url){
+        String content = "";
+
+        CloseableHttpClient httpClient = HttpClients.createDefault();
+        HttpGet httpGet = new HttpGet(url);
+        CloseableHttpResponse response = null;
+        try {
+            response = httpClient.execute(httpGet);
+            HttpEntity httpEntity = response.getEntity();
+            content = EntityUtils.toString(httpEntity,"utf-8");
+        }catch (ClientProtocolException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return content;
+    }
+
+    /**
+     * 获取页面内容方法2
+     * @param url
+     */
+    public static StringBuilder getHtmlContent2(String url){
+        StringBuilder entityStringBuilder = new StringBuilder();
+        CloseableHttpClient httpClient = HttpClients.createDefault();
+        HttpGet httpGet = new HttpGet(url);
+        httpGet.addHeader("Content-Type","application/x-www-form-urlencoded;charset=utf-8");
+        // 执行请求
+        HttpResponse response;
+        String line;
+        try {
+            response = httpClient.execute(httpGet);
+            HttpEntity httpEntity = response.getEntity();
+            BufferedReader bufferedReader = null;
+            bufferedReader = new BufferedReader(new InputStreamReader(
+                    httpEntity.getContent(), "utf-8"), 8 * 1024);
+
+            while ((line = bufferedReader.readLine()) != null) {
+                entityStringBuilder.append(line + "\n");
+            }
+            //  System.out.println(entityStringBuilder.toString());
+            // appendMethodB("f:/中医基础理论.html",entityStringBuilder.toString());
+            savaFile("f:/中医基础理论.html",entityStringBuilder.toString(),"UTF-8");
+
+        } catch (ClientProtocolException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return entityStringBuilder;
+    }
+    /**
+     * 获取页面内容方法3
+     * http://www.self.org.cn/self_yj/201801/t20180125_29755.html
+     * @param url
+     */
+    public static void getHtmlContent3(String url){
+        String request_full_url = "http://www.self.org.cn/self_yj/201801/t20180125_29755.html";
+        try{
+            URLConnection conn = new URL(url).openConnection();
+            conn.setRequestProperty("User-Agent","Mozilla/4.0 (compatible; MSIE 5.0; Windows XP; DigExt)");
+            InputStream is = conn.getInputStream();
+            FileOutputStream out = new FileOutputStream("test0213.html");
+            int a=0;
+            while((a = is.read()) != -1){
+                out.write(a);
+            }
+            is.close();
+            out.close();
+        }catch(Exception e){
+            System.out.println(e);
+        }
+    }
+
+    public static ExecutorService getFileWithThreadPool(String urlLocation,String filePath,String savePath,int poolLength){
+    ExecutorService threadPool = Executors.newFixedThreadPool(poolLength);
+        try {
+            long len = 1L;
+            for (int i =0; i < poolLength;i++){
+                long start = i*len/poolLength;
+                long end = (i+1)*len/poolLength-1;
+                if(i == poolLength - 1){
+                    end = len;
+                }
+                PicDownload download = new PicDownload(urlLocation,savePath,start,end);
+            }
+        }catch(Exception e){
+            System.out.println(e);
+        }
+
+        return threadPool;
+}
+
+    /**
+     * 保存文件
+     * @param fileName 文件名称：绝对路径
+     * @param content 要保存的内容
+     * @param format 以某种格式保存文件
+     */
+    public static void savaFile(String fileName, String content,String format) {
+        BufferedWriter rd=null;
+        OutputStream out=null;
+        File file = new File(fileName);
+        try {
+            out = new FileOutputStream(file);
+            rd = new BufferedWriter(new OutputStreamWriter(out,format));
+            rd.write(content);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }finally{
+            if(null!=rd){
+                try {
+                    rd.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+            if(null!=out){
+                try {
+                    out.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    /**
+     * 中国科学院网络化科普平台-科普演讲
+     * 获取真实的下载Mp4地址
+     * @param url
+     * @return
+     */
+    public static String getDetailUrl(String url){
+        String whole_detail_url = "";
+        Document doc = null;
+        Document doc2 = null;
+        Document doc3 = null;
+        try {
+            doc = Jsoup.connect(url).get();
+            Elements elements = doc.getElementsByClass("pic_item");
+            for (Element element :elements){
+                Element e_value = element.getElementsByTag("a").get(1);
+                /** 1. 获取列表页中每个详情页的地址*/
+                String linkSrc = e_value.attr("href");
+                logger.error("====linkSrc======" + linkSrc);
+                String fileName = e_value.text();
+                logger.error("======fileName=====" +fileName);
+                /** 2. 拼接成完整地址*/
+                whole_detail_url = url+linkSrc.replace("./","");
+                logger.error("======完整详情地址=====" + whole_detail_url);
+                doc2 = Jsoup.connect(whole_detail_url).get();
+                Elements elements2 = doc2.getElementsByClass("index_02_left_tit_l2");
+                Element element2 = elements2.select("a").first();
+                String mp4ReqUrl = element2.attr("href");
+                logger.error("======mp4ReqUrl=====" +mp4ReqUrl);
+                /** 3.保存文件*/
+                String format = ".mp4";
+                savaFile(fileName,mp4ReqUrl,format);
+                logger.error(fileName +"======下载成功=====");
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            logger.error("======e=====" +e);
+        }
+        return whole_detail_url;
+    }
+
+    /**
+     * 听叶思芬说金瓶梅
+     * 获取真实的下载Mp3地址
      * @param url
      * @return
      */
@@ -77,12 +272,9 @@ public class ParserHtml {
             }
             is.close();
             out.close();
-
-
         } catch (Exception e) {
             e.printStackTrace();
         }
-
     }
 
     public static int chineseNumber2Int(String chineseNumber){
